@@ -1,0 +1,81 @@
+Name:	Ethernet
+Description:	Realtek PCIe GBE Family Controller
+Physical address (MAC):	a0:8c:fd:ea:b8:2e
+Status:	Operational
+Maximum transmission unit:	1500
+Link speed (Receive/Transmit):	1000/1000 (Mbps)
+DHCP enabled:	Yes
+DHCP servers:	192.168.1.34
+DHCP lease obtained:	‎Wednesday, ‎September ‎11, ‎2024 8:16:44 AM
+DHCP lease expires:	‎Thursday, ‎September ‎19, ‎2024 8:16:44 AM
+IPv4 address:	192.168.8.75/23
+IPv6 address:	fe80::3c7e:9d09:125c:6784%13/64
+Default gateway:	192.168.8.1
+DNS servers:	192.168.1.34, 192.168.1.38, 192.168.1.3
+DNS domain name:	iitindus.com
+DNS connection suffix:	iitindus.com
+DNS search suffix list:	
+Network name:	iitindus.com
+Network category:	Domain
+Connectivity (IPv4/IPv6):	Connected to Internet / Connected to unknown network
+	                                   
+	                                   
+Name:	isatap.iitindus.com
+Description:	Microsoft ISATAP Adapter
+Physical address (MAC):	00:00:00:00:00:00:00:e0
+Status:	Not operational
+Maximum transmission unit:	1280
+IPv6 address:	fe80::5efe:192.168.8.75%11/128
+DNS servers:	192.168.1.34, 192.168.1.38, 192.168.1.3
+DNS connection suffix:	iitindus.com
+Connectivity (IPv4/IPv6):	Disconnected
+	                                   
+	                                   
+Name:	VirtualBox Host-Only Network
+Description:	VirtualBox Host-Only Ethernet Adapter
+Physical address (MAC):	0a:00:27:00:00:16
+Status:	Not Present
+Maximum transmission unit:	0
+Connectivity (IPv4/IPv6):	Disconnected
+	                                   
+	                                   
+Name:	VirtualBox Host-Only Network #2
+Description:	VirtualBox Host-Only Ethernet Adapter #2
+Physical address (MAC):	0a:00:27:00:00:17
+Status:	Not Present
+Maximum transmission unit:	0
+Connectivity (IPv4/IPv6):	Disconnected
+	                                   
+	                                   
+Name:	VirtualBox Host-Only Network #3
+Description:	VirtualBox Host-Only Ethernet Adapter #3
+Physical address (MAC):	0a:00:27:00:00:03
+Status:	Not Present
+Maximum transmission unit:	0
+Connectivity (IPv4/IPv6):	Disconnected
+	                                   
+	                                   
+Name:	VirtualBox Host-Only Network #4
+Description:	VirtualBox Host-Only Ethernet Adapter #4
+Physical address (MAC):	0a:00:27:00:00:0b
+Status:	Not Present
+Maximum transmission unit:	0
+Connectivity (IPv4/IPv6):	Disconnected
+	                                   
+	                                   
+Name:	VirtualBox Host-Only Network #5
+Description:	VirtualBox Host-Only Ethernet Adapter #5
+Physical address (MAC):	0a:00:27:00:00:12
+Status:	Not Present
+Maximum transmission unit:	0
+Connectivity (IPv4/IPv6):	Disconnected
+	                                   
+	                                   
+Name:	VirtualBox Host-Only Network #6
+Description:	VirtualBox Host-Only Ethernet Adapter #6
+Physical address (MAC):	0a:00:27:00:00:0c
+Status:	Not Present
+Maximum transmission unit:	0
+Connectivity (IPv4/IPv6):	Disconnected
+	                                   
+	                                   
