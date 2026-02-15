@@ -15,159 +15,267 @@ V_GW=$(ip route | grep default | awk '{print $3}')
 P_IP=$($PWSH -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.InterfaceAlias -match 'Wi-Fi|Ethernet' -and \$_.IPv4Address -notmatch '172.' }).IPAddress" 2>/dev/null | head -n 1 | tr -d '\r')
 P_GW=$($PWSH -Command "(Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Select-Object -ExpandProperty NextHop | Select-Object -First 1)" 2>/dev/null | tr -d '\r')
 
+if [ ! -z "$P_IP" ]; then
+    P_RANGE=$(echo $P_IP | cut -d. -f1-3).0/24
+else
+    P_RANGE="Unknown"
+fi
+
 show_menu() {
     
     echo "------------------------------------------"
-    echo "      GHOST MANGO AUDITOR (STEALTH)       "
+    echo "    UNIVERSAL MANGO AUDITOR (WSL2)        "
     echo "------------------------------------------"
-    echo " Mode: PASSIVE/SYN STEALTH (-sS -T2)      "
+    echo " Current WiFi IP:  ${P_IP:-Disconnected}"
+    echo " Current Gateway:  ${P_GW:-Unknown}"
+    echo " Current Subnet:   $P_RANGE"
     echo "------------------------------------------"
-    echo "1) [DISCOVERY]      Find All Real Devices (Passive)"
-    echo "2) [IDENTITY]       Scan Virtual Host via SYN Stealth"
-    echo "3) [ROUTER] 	      Stealth Interrogate Router: $P_GW"
-    echo "4) [TRUE ORIGIN]    Trace Network Origin"
-    echo "5) [NINJA]	      Listen for Hidden Traffic"
-    echo "6) [DECOY]          Hide IP among other ips"
-    echo "7) [SPOOF]          Temporarily Spoof Hardware"
-    echo "8) [GHOST 100]      Permanently Spoof Hardware"
-    echo "9) [SNIFF]        Sniff own traffic"
-    echo "10) Exit"
+    echo "1) [DISCOVERY] Find All Real Devices"
+    echo "2) [IDENTITY]  Scan Virtual Host (Windows)"
+    echo "3) [ORIGIN]    Deep Scan Current Router"
+    echo "4) [TRUE ORIGIN] Trace Network Origin"
+    echo "5) [NINJA]     Listen for Hidden Traffic"
+    echo "6) [AGG DISC]  Hyper-Aggro Discovery"
+    echo "7) [HYBRID DISC]    Smart Discovery"
+    echo "8) [OS]    Scan OS Type"
+    echo "9) Exit"
+    echo "------------------------------------------"
 }
 
 execute_action() {
     case $1 in
 1)
-            echo "[STEALTH] Initiating Passive Recon (45s)..."
-            echo "Listening for ARP/DHCP broadcasts. 100% silent."
-            echo "------------------------------------------"
-            # -p: passive mode (no packets sent)
-            # -r: subnet range
-            sudo timeout 45s netdiscover -p -i eth0 -r $(echo $P_IP | cut -d. -f1-3).0/24
-            
-            echo -e "\n[+] Discovery complete. Checking local cache for quiet hosts..."
-            $ARP_EXE -a | grep "$(echo $P_IP | cut -d. -f1-3)"            ;;
+                echo "--- LOUD DISCOVERY ---"
+    echo "[LOUD] Sending Multi-Protocol Probes (ICMP + TCP)..."
+
+    # 1. Real-time Nmap Loop
+    # -oG - outputs in "Grepable" format for easier line-by-line parsing
+    nmap -sn -PE -PP -PS22,80,443 "$P_RANGE" -oG - | while read -r line; do
+        if echo "$line" | grep -q "Host:"; then
+            IP=$(echo "$line" | awk '{print $2}')
+            # Extract hostname if it exists, otherwise just show IP
+            HOST=$(echo "$line" | awk '{print $3}' | tr -d '()')
+            if [ "$HOST" != "" ] && [ "$HOST" != "$IP" ]; then
+                echo "[FOUND] $IP ($HOST)"
+            else
+                echo "[FOUND] $IP"
+            fi
+        fi
+    done
+
+    echo -e "\n[+] Updated Windows ARP Neighbors:"
+    $ARP_EXE -a | grep "$PREFIX"
+
+    # 2. Extract and Check Gateway Vendor
+    # We use -A 1 to ensure we get the line following the Gateway IP if needed
+    RAW_MAC=$($ARP_EXE -a | grep -w "$P_GW" | awk '{print $2}' | head -n 1)
+
+    if [ -n "$RAW_MAC" ] && [ "$RAW_MAC" != "N/A" ]; then
+        # Standardize MAC format (00-11-22-33-44-55 to 00:11:22:33:44:55)
+        CLEAN_OUI=$(echo "$RAW_MAC" | tr '-' ':' | cut -c1-8)
+        
+        echo -n "[VENDOR] Checking hardware manufacturer for $P_GW ($RAW_MAC)... "
+        
+        # API Call with a small timeout to prevent hanging
+        VENDOR=$(curl -s --max-time 3 "https://api.macvendors.com/$CLEAN_OUI")
+        
+        if [[ "$VENDOR" == *"errors"* ]] || [[ -z "$VENDOR" ]]; then
+            echo -e "\033[33mRandomized/Private Hardware\033[0m"
+        else
+            echo -e "\033[32m$VENDOR\033[0m"
+        fi
+    else
+        echo "[!] Could not find MAC for $P_GW in Windows ARP cache."
+    fi
+;;
+
         2)
-            echo "[STEALTH] Scanning Virtual Host via SYN Stealth..."
-            # -sS (SYN Scan), -T2 (Polite timing)
-            nmap -sS -sV -T2 -Pn "$V_GW"
+            echo "Scanning Windows Host via Virtual Bridge..."
+            nmap -sV -T4 -O -Pn "$V_GW"
             ;;
         3)
-            echo "[STEALTH] Stealth Interrogating Router: $P_GW"
-            # Using -f (fragment packets) to bypass simple firewalls
-            nmap -sS -sV -f -T2 -Pn "$P_GW"
-            # -D RND:10 generates 10 random decoy IP addresses
-            # ME ensures your real IP is hidden somewhere in that list of 10
-            
+            echo "Aggressive Scan on Router: $P_GW"
+            nmap -A -Pn "$P_GW"
+            # This fetches the Organization (ISP) associated with your public exit point
+            curl -s "https://ipapi.co/org/" && echo " (Location: $(curl -s https://ipapi.co/city/))"
+            echo "--- SEARCHING FOR ADMIN PORTAL ---"
+            if [ -z "$P_GW" ]; then echo "No Gateway found."; else
+                echo "[POKE] Checking $P_GW for Web Management Interfaces..."
+                # Ports: 80 (HTTP), 443 (HTTPS), 8080/8443 (Common Alt), 7547 (TR-069 Management)
+                sudo nmap -sV -O -p 80,443,8080,8443,7547 --open "$P_GW" | grep -E "PORT|STATE|SERVICE|VERSION"
+                
+                echo -e "\n[TIP] If you see port 80 or 443 open, try visiting http://$P_GW in your browser."
+            fi
             ;;
         4)
-            echo "[STEALTH] Tracing Origin via Public API..."
-            # Using a different API to avoid repeated patterns
-            curl -s "https://ipinfo.io/org" && echo " ($(curl -s https://ipinfo.io/city))"
+            echo "--- TRACING NETWORK ORIGIN ---"
+            if [ -z "$P_GW" ]; then echo "No Gateway found."; else
+                echo "Master Gateway Found: $P_GW"
+                sudo nmap -sV -O -Pn -T4 "$P_GW"
+                # This fetches the Organization (ISP) associated with your public exit point
+                curl -s "https://ipapi.co/org/" && echo " (Location: $(curl -s https://ipapi.co/city/))"
+            fi
             ;;
-5)
-            echo "--- ADVANCED SNIFFER ---"
-            echo "1) Discovery (mDNS/SSDP/ARP)"
-            echo "2) Web Traffic (HTTP/HTTPS)"
-            echo "3) DNS Queries (Site Names)"
-            echo "4) The Firehose (All Traffic)"
-            read -p "Select Mode: " sniff_mode
-
-            case $sniff_mode in
-                1) FILTER="udp port 5353 or udp port 1900 or arp" ;;
-                2) FILTER="tcp port 80 or tcp port 443" ;;
-                3) FILTER="udp port 53" ;;
-                4) FILTER="" ;;
-            esac
-
-            echo "Sniffing started. Press Ctrl+C to stop."
-            sudo tcpdump -i eth0 -n -l $FILTER | awk '{
-                cyan="\033[36m"; green="\033[32m"; yellow="\033[33m"; purple="\033[35m"; red="\033[1;31m"; reset="\033[0m";
-                
-                if ($0 ~ /\.443[: ]/) print red "[SECURE WEB]" reset " " $0;
-                else if ($0 ~ /\.80[: ]/) print yellow "[HTTP]" reset " " $0;
-                else if ($0 ~ /\.53[: ]/) print purple "[DNS QUERY]" reset " " $0;
-                else if ($0 ~ /\.138[: ]/ || $0 ~ /\.1900[: ]/) print cyan "[DISCOVERY]" reset " " $0;
-                else if ($0 ~ /ARP/) print green "[DEVICE]" reset " " $0;
-                else print "[RAW] " $0;
+        5)
+             echo "Capturing DNS, Web, and Discovery traffic..."
+    # Captures DNS (53), Web (80/443), and common discovery ports
+            sudo tcpdump -i eth0 -n -l "port 53 or port 80 or port 443 or port 5353 or port 1900" | awk '{
+            if ($0 ~ /\.53 /) print "\033[35m[DNS]\033[0m " $0;
+            else if ($0 ~ /\.443/) print "\033[31m[HTTPS]\033[0m " $0;
+            else if ($0 ~ /1900|5353/) print "\033[36m[DISCOVERY]\033[0m " $0;
+            else print "[TRAFFIC] " $0;
             }'
             ;;
-        6)  echo "--- TACTICAL GHOST SCAN (Decoy Swarm) ---"
-            read -p "Number of decoys (default 10): " DECOY_COUNT
-            DECOY_COUNT=${DECOY_COUNT:-10}
-            
-            echo "[GHOST] Swarming $P_GW with $DECOY_COUNT decoys..."
-            # Removed -f (fragmentation) to avoid triggering IPS drops
-            # Added --randomize-hosts to make the scan pattern non-linear
-            sudo nmap -sS -sV -Pn -T4 -D RND:$DECOY_COUNT --randomize-hosts "$P_GW"
-            
-            ;;
-        7)
-            echo "--- HARDWARE GHOSTING ---"
-            echo "Choose a Hardware Mask:"
-            echo "1) Apple (iPhone/Mac)"
-            echo "2) Samsung"
-            echo "3) Google"
-            read -p "Selection: " mac_choice
-            
-            case $mac_choice in
-                1) MASK="Apple" ;;
-                2) MASK="Samsung" ;;
-                3) MASK="Google" ;;
-                *) MASK="0" ;;
-            esac
+6)
+    # --- RESUMPTION CHECK ---
+    SKIP_DISCO="n"
+    TARGET_FILE="/tmp/aggro_ips.txt"
 
-            echo "[GHOST] Scanning as $MASK device..."
-            # --spoof-mac: Changes your hardware ID for this scan only
-            sudo nmap -sS -Pn --spoof-mac $MASK "$P_GW"
-            ;;
-        8)
-            echo "--- PERMANENT HARDWARE GHOSTING ---"
-            echo "1) Mask as Apple (iPhone)"
-            echo "2) Mask as Samsung"
-            echo "3) Mask as Google"
-            echo "4) RESET to Factory Hardware ID"
-            read -p "Selection: " mac_choice
+    if [ -f "$TARGET_FILE" ] && [ -s "$TARGET_FILE" ]; then
+        echo -e "\n\033[33m[?] Found previous discovery results:\033[0m"
+        cat "$TARGET_FILE"
+        read -p "Skip Discovery and jump straight to Vuln Probe? (y/n): " SKIP_DISCO
+    fi
+
+    if [[ "$SKIP_DISCO" != "y" ]]; then
+        echo "--- HYPER-AGGRO DISCOVERY & VULN PROBE ---"
+        echo "Step 1: Rapid-fire Wake-up (Fast-Ping)..."
+        # High parallelism to wake up sleeping NICs
+        nmap -sn -PE -n --min-parallelism 100 "$P_RANGE" > /dev/null 2>&1
+        
+        echo "Step 2: Nmap ARP Ping Scan ($P_RANGE)..."
+        # Clear file and start streaming results live
+        > "$TARGET_FILE"
+        nmap -sn -PR "$P_RANGE" -oG - | while read -r line; do
+            if echo "$line" | grep -q "Host:"; then
+                IP=$(echo "$line" | awk '{print $2}')
+                echo "[LIVE] Discovered: $IP"
+                echo "$IP" >> "$TARGET_FILE"
+            fi
+        done
+    fi
+    
+    echo -e "\nStep 3: Probing for Service Versions (DNS Chaos)..."
+    
+    
+    while read -r ip; do
+        # Immediate visual feedback for the user
+        echo -n "[PROBE] Testing $ip... "
+        
+        # Check if port 53 is open before attempting the heavy dig command
+        if nmap -p 53 --open -T4 --host-timeout 1s "$ip" | grep -q "open"; then
+            echo -e "\033[32mPort 53 Open\033[0m"
             
-            case $mac_choice in
-                1) NEW_MAC="00:1E:C2:$(printf '%02X:%02X:%02X' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))" ;; # Apple OUI
-                2) NEW_MAC="00:12:47:$(printf '%02X:%02X:%02X' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))" ;; # Samsung OUI
-                3) NEW_MAC="00:1A:11:$(printf '%02X:%02X:%02X' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))" ;; # Google OUI
-                4) 
-                   echo "[REVERT] Restoring real Hardware ID..."
-                   # WSL2 usually uses a 00:15:5D prefix; this reset triggers a refresh
-                   ip link set dev eth0 down
-                   # Attempting to fetch the 'permanent' address if possible, else use a default reset
-                   ip link set dev eth0 address $(ethtool -P eth0 | awk '{print $3}' 2>/dev/null || echo "00:15:5d:a9:5a:03")
-                   ip link set dev eth0 up
-                   echo "Hardware ID Reset."
-                   return
-                   ;;
-                *) return ;;
-            esac
+            # Attempt DNS version disclosure
+            VERSION=$(dig @$ip version.bind CHAOS TXT +short +time=1 | tr -d '"')
+            
+            if [ -n "$VERSION" ]; then
+                echo -e "    \033[34m[!]\033[0m Version Found: \033[31m$VERSION\033[0m"
+                if [[ "$VERSION" == *"2.51"* ]]; then
+                    echo -e "    \033[41m CRITICAL \033[0m \033[31mPotential CVE-2017-14491 (Dnsmasq RCE)\033[0m"
+                fi
+            fi
+        else
+            echo "Skipped (DNS Closed)"
+        fi
+    done < "$TARGET_FILE"
 
-            echo "[GHOST] Changing eth0 MAC to $NEW_MAC..."
-            sudo ip link set dev eth0 down
-            sudo ip link set dev eth0 address $NEW_MAC
-            sudo ip link set dev eth0 up
-            echo "Interface eth0 is now GHOSTED as $(ip link show eth0 | grep link/ether | awk '{print $2}')"
-            # Define a hostname that matches the brand
-            case $mac_choice in
-            1) NEW_HOST="iPhone-$(printf '%04d' $((RANDOM%10000)))" ;;
-            2) NEW_HOST="Samsung-S24-Ultra" ;;
-            3) NEW_HOST="Pixel-8-Pro" ;;
-            4) NEW_HOST="Mango" ;;
-            esac
-
-            # Apply the hostname change instantly
-            sudo hostname $NEW_HOST
-            echo "[GHOST] Hostname changed to: $NEW_HOST"
-            ;;
-9) echo " [SNIFFING OWN TRAFFIC] "
-sudo iftop -i eth0 -P
+    echo -e "\nStep 4: Confirmed Windows ARP Neighbors:"
+    PREFIX=$(echo $P_IP | cut -d. -f1-3)
+    $ARP_EXE -a | grep "$PREFIX" | grep "dynamic"
 ;;
-        10)
-            echo "Ghosting out..."
+7)
+    echo "--- SMART HYBRID DISCOVERY (COMPLETE MAP) ---"
+    
+    # 1. The "Floodlight" Poke
+    # We use a rapid Nmap 'Ping Sweep' from Linux while 
+    # Windows is watching. This forces every device to ARP-reply.
+    echo "[POKE] Broadcasting to all potential hosts..."
+    # -sn (No port scan), -PR (ARP Ping - the most effective on WiFi)
+    nmap -sn -PR --randomize-hosts "$P_RANGE" > /dev/null 2>&1
+    
+    # Also trigger the Windows broadcast for redundancy
+    powershell.exe -Command "ping -n 2 -w 500 ${PREFIX}.255" > /dev/null 2>&1
+    
+    # 2. Wait 10 seconds for the ARP cache to populate
+    for i in {10..1}; do
+        echo -ne "[GHOST] Forcing network identification... ${i}s\r"
+        sleep 1
+    done
+    echo -e "\n[GHOST] Extraction started..."
+
+    # 3. Process the Table
+    # We pull from the Windows ARP binary again, now that it's "warm"
+# 3. Process the Table
+    # Ensure PREFIX is set to your ACTUAL WiFi (e.g., 192.168.1)
+    # We filter for 'dynamic' to ignore static virtual interfaces
+    RAW_DATA=$($ARP_EXE -a | grep "$PREFIX" | grep "dynamic" | awk '{print $1, $2}')
+
+    echo -e "\n[+] Full WiFi Device Map (Subnet: $PREFIX.x):"
+    echo "------------------------------------------------------------"
+    
+    if [ -z "$RAW_DATA" ]; then
+        echo "    [!] Error: No physical devices found on $PREFIX.x"
+    else
+        echo "$RAW_DATA" | while read -r ip mac; do
+            CLEAN_MAC=$(echo $mac | tr '-' ':')
+            OUI=$(echo ${CLEAN_MAC^^} | cut -c1-8) # Convert to uppercase for matching
+            
+            # 1. HARDCODED LOCAL CHECK (Instant & Reliable)
+            if [[ "$OUI" == "00:15:5D" ]]; then
+                VENDOR="Microsoft (WSL/Hyper-V)"
+            elif [[ "$CLEAN_MAC" =~ ^(2|6|A|E|22|ce) ]]; then
+                # Checking the second character for randomization
+                VENDOR="Randomized (Privacy ON)"
+            else
+                # 2. EXTERNAL API FALLBACK
+                VENDOR=$(curl -s --max-time 1 "https://api.macvendors.com/$OUI")
+                [ -z "$VENDOR" ] || [[ "$VENDOR" == *"errors"* ]] && VENDOR="Unknown Vendor"
+            fi
+
+            printf "[FOUND] %-15s | %-17s | \033[32m%s\033[0m\n" "$ip" "$mac" "$VENDOR"
+        done
+    fi
+;;
+8) 
+    echo "[SCANNING] Mapping active WiFi devices..."
+    
+    # 1. Quick Discovery to populate the list
+    # We use -n to skip DNS resolution here for maximum speed
+    LIVE_TARGETS=$(nmap -sn -n $P_RANGE | grep "Nmap scan report for" | awk '{print $NF}')
+
+    if [ -n "$LIVE_TARGETS" ]; then
+        COUNT=$(echo "$LIVE_TARGETS" | wc -l)
+	echo "$LIVE_TARGETS"
+        echo "[FOUND] $COUNT active devices. Starting Real-Time Deep OS Scan..."
+        echo "------------------------------------------------------------"
+        
+        # 2. Individual OS Probing for immediate feedback
+        for TARGET in $LIVE_TARGETS; do
+        echo -e "\n[PROBING] Target: \033[1;34m$TARGET\033[0m"
+    
+    # 1. -F: Scan only top 100 ports (enough for OS fingerprinting)
+    # 2. -O: Guess the OS/Hardware
+    # 3. --script nbstat: Pulls the "Friendly Name" (Windows/NetBIOS)
+    # 4. -T4: Aggressive timing for local networks
+    
+        # Add --script smb-os-discovery to specifically ask for the Windows version
+sudo nmap -F -sV --version-light -O --osscan-guess --script nbstat,smb-os-discovery -T4 "$TARGET" | \
+grep -E "Nmap scan report for|OS details|Device type|NetBIOS name|Service Info|OS:|Computer name" | \
+sed 's/Nmap scan report for/   [NAME]:/' | \
+sed 's/^/  /'
+done
+        
+    else
+        echo "[ERROR] No devices found on $P_RANGE. Check your WiFi connection."
+    fi
+;;
+        9)
+            echo "Audit Complete. Staying stealthy."
             exit 0
+            ;;
+        *)
+            echo "Invalid selection."
             ;;
     esac
     read -p "Press enter to continue..."
@@ -176,6 +284,7 @@ sudo iftop -i eth0 -P
 while true; do
     show_menu
     read -p "Selection: " choice
-    if [ "$choice" -eq 10 ]; then exit 0; fi
+    # Fixed the exit bug: Choice 6 now exits correctly
+    if [ "$choice" -eq 9 ]; then exit 0; fi
     execute_action "$choice"
 done
