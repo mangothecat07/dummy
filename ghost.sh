@@ -16,7 +16,7 @@ P_IP=$($PWSH -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$
 P_GW=$($PWSH -Command "(Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Select-Object -ExpandProperty NextHop | Select-Object -First 1)" 2>/dev/null | tr -d '\r')
 
 show_menu() {
-
+    
     echo "------------------------------------------"
     echo "      GHOST MANGO AUDITOR (STEALTH)       "
     echo "------------------------------------------"
@@ -24,12 +24,14 @@ show_menu() {
     echo "------------------------------------------"
     echo "1) [DISCOVERY]      Find All Real Devices (Passive)"
     echo "2) [IDENTITY]       Scan Virtual Host via SYN Stealth"
-    echo "3) [ROUTER]         Stealth Interrogate Router: $P_GW"
+    echo "3) [ROUTER] 	      Stealth Interrogate Router: $P_GW"
     echo "4) [TRUE ORIGIN]    Trace Network Origin"
-    echo "5) [NINJA]          Listen for Hidden Traffic"
+    echo "5) [NINJA]	      Listen for Hidden Traffic"
     echo "6) [DECOY]          Hide IP among other ips"
     echo "7) [SPOOF]          Temporarily Spoof Hardware"
     echo "8) [GHOST 100]      Permanently Spoof Hardware"
+    echo "9) [SNIFF]        Sniff own traffic"
+    echo "10) Exit"
 }
 
 execute_action() {
@@ -41,7 +43,7 @@ execute_action() {
             # -p: passive mode (no packets sent)
             # -r: subnet range
             sudo timeout 45s netdiscover -p -i eth0 -r $(echo $P_IP | cut -d. -f1-3).0/24
-
+            
             echo -e "\n[+] Discovery complete. Checking local cache for quiet hosts..."
             $ARP_EXE -a | grep "$(echo $P_IP | cut -d. -f1-3)"            ;;
         2)
@@ -55,7 +57,7 @@ execute_action() {
             nmap -sS -sV -f -T2 -Pn "$P_GW"
             # -D RND:10 generates 10 random decoy IP addresses
             # ME ensures your real IP is hidden somewhere in that list of 10
-
+            
             ;;
         4)
             echo "[STEALTH] Tracing Origin via Public API..."
@@ -80,7 +82,7 @@ execute_action() {
             echo "Sniffing started. Press Ctrl+C to stop."
             sudo tcpdump -i eth0 -n -l $FILTER | awk '{
                 cyan="\033[36m"; green="\033[32m"; yellow="\033[33m"; purple="\033[35m"; red="\033[1;31m"; reset="\033[0m";
-
+                
                 if ($0 ~ /\.443[: ]/) print red "[SECURE WEB]" reset " " $0;
                 else if ($0 ~ /\.80[: ]/) print yellow "[HTTP]" reset " " $0;
                 else if ($0 ~ /\.53[: ]/) print purple "[DNS QUERY]" reset " " $0;
@@ -92,12 +94,12 @@ execute_action() {
         6)  echo "--- TACTICAL GHOST SCAN (Decoy Swarm) ---"
             read -p "Number of decoys (default 10): " DECOY_COUNT
             DECOY_COUNT=${DECOY_COUNT:-10}
-
+            
             echo "[GHOST] Swarming $P_GW with $DECOY_COUNT decoys..."
             # Removed -f (fragmentation) to avoid triggering IPS drops
             # Added --randomize-hosts to make the scan pattern non-linear
             sudo nmap -sS -sV -Pn -T4 -D RND:$DECOY_COUNT --randomize-hosts "$P_GW"
-
+            
             ;;
         7)
             echo "--- HARDWARE GHOSTING ---"
@@ -106,7 +108,7 @@ execute_action() {
             echo "2) Samsung"
             echo "3) Google"
             read -p "Selection: " mac_choice
-
+            
             case $mac_choice in
                 1) MASK="Apple" ;;
                 2) MASK="Samsung" ;;
@@ -125,12 +127,12 @@ execute_action() {
             echo "3) Mask as Google"
             echo "4) RESET to Factory Hardware ID"
             read -p "Selection: " mac_choice
-
+            
             case $mac_choice in
                 1) NEW_MAC="00:1E:C2:$(printf '%02X:%02X:%02X' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))" ;; # Apple OUI
                 2) NEW_MAC="00:12:47:$(printf '%02X:%02X:%02X' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))" ;; # Samsung OUI
                 3) NEW_MAC="00:1A:11:$(printf '%02X:%02X:%02X' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))" ;; # Google OUI
-                4)
+                4) 
                    echo "[REVERT] Restoring real Hardware ID..."
                    # WSL2 usually uses a 00:15:5D prefix; this reset triggers a refresh
                    ip link set dev eth0 down
@@ -160,7 +162,10 @@ execute_action() {
             sudo hostname $NEW_HOST
             echo "[GHOST] Hostname changed to: $NEW_HOST"
             ;;
-        9)
+9) echo " [SNIFFING OWN TRAFFIC] "
+sudo iftop -i eth0 -P
+;;
+        10)
             echo "Ghosting out..."
             exit 0
             ;;
@@ -171,6 +176,6 @@ execute_action() {
 while true; do
     show_menu
     read -p "Selection: " choice
-    if [ "$choice" -eq 9 ]; then exit 0; fi
+    if [ "$choice" -eq 10 ]; then exit 0; fi
     execute_action "$choice"
 done
